@@ -7616,6 +7616,7 @@ requires_openai_auth = true
                     azure_openai_resource: None,
                     azure_openai_deployment: None,
                     azure_openai_api_version: None,
+                    api_path: None,
                 },
             )]),
             ..Config::default()
@@ -7647,6 +7648,7 @@ requires_openai_auth = true
                     azure_openai_resource: None,
                     azure_openai_deployment: None,
                     azure_openai_api_version: None,
+                    api_path: None,
                 },
             )]),
             api_key: None,
@@ -7712,6 +7714,7 @@ requires_openai_auth = true
                     azure_openai_resource: None,
                     azure_openai_deployment: None,
                     azure_openai_api_version: None,
+                    api_path: None,
                 },
             )]),
             ..Config::default()
