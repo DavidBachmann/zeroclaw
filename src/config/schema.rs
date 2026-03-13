@@ -522,14 +522,34 @@ pub struct McpServerConfig {
 }
 
 /// External MCP client configuration (`[mcp]` section).
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct McpConfig {
     /// Enable MCP tool loading.
     #[serde(default)]
     pub enabled: bool,
+    /// Load MCP tool schemas on-demand via `tool_search` instead of eagerly
+    /// including them in the LLM context window. When `true` (the default),
+    /// only tool names are listed in the system prompt; the LLM must call
+    /// `tool_search` to fetch full schemas before invoking a deferred tool.
+    #[serde(default = "default_deferred_loading")]
+    pub deferred_loading: bool,
     /// Configured MCP servers.
     #[serde(default, alias = "mcpServers")]
     pub servers: Vec<McpServerConfig>,
+}
+
+fn default_deferred_loading() -> bool {
+    true
+}
+
+impl Default for McpConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            deferred_loading: default_deferred_loading(),
+            servers: Vec::new(),
+        }
+    }
 }
 
 // ── TTS (Text-to-Speech) ─────────────────────────────────────────
@@ -8864,6 +8884,7 @@ require_otp_to_resume = true
         let cfg = McpConfig {
             enabled: true,
             servers: vec![stdio_server("fs", "/usr/bin/mcp-fs")],
+            ..Default::default()
         };
         assert!(validate_mcp_config(&cfg).is_ok());
     }
@@ -8873,6 +8894,7 @@ require_otp_to_resume = true
         let cfg = McpConfig {
             enabled: true,
             servers: vec![http_server("svc", "http://localhost:8080/mcp")],
+            ..Default::default()
         };
         assert!(validate_mcp_config(&cfg).is_ok());
     }
@@ -8882,6 +8904,7 @@ require_otp_to_resume = true
         let cfg = McpConfig {
             enabled: true,
             servers: vec![sse_server("svc", "https://example.com/events")],
+            ..Default::default()
         };
         assert!(validate_mcp_config(&cfg).is_ok());
     }
@@ -8891,6 +8914,7 @@ require_otp_to_resume = true
         let cfg = McpConfig {
             enabled: true,
             servers: vec![stdio_server("", "/usr/bin/tool")],
+            ..Default::default()
         };
         let err = validate_mcp_config(&cfg).expect_err("empty name should fail");
         assert!(
@@ -8904,6 +8928,7 @@ require_otp_to_resume = true
         let cfg = McpConfig {
             enabled: true,
             servers: vec![stdio_server("   ", "/usr/bin/tool")],
+            ..Default::default()
         };
         let err = validate_mcp_config(&cfg).expect_err("whitespace name should fail");
         assert!(
@@ -8920,6 +8945,7 @@ require_otp_to_resume = true
                 stdio_server("fs", "/usr/bin/mcp-a"),
                 stdio_server("fs", "/usr/bin/mcp-b"),
             ],
+            ..Default::default()
         };
         let err = validate_mcp_config(&cfg).expect_err("duplicate name should fail");
         assert!(err.to_string().contains("duplicate name"), "got: {err}");
@@ -8932,6 +8958,7 @@ require_otp_to_resume = true
         let cfg = McpConfig {
             enabled: true,
             servers: vec![server],
+            ..Default::default()
         };
         let err = validate_mcp_config(&cfg).expect_err("zero timeout should fail");
         assert!(err.to_string().contains("greater than 0"), "got: {err}");
@@ -8944,6 +8971,7 @@ require_otp_to_resume = true
         let cfg = McpConfig {
             enabled: true,
             servers: vec![server],
+            ..Default::default()
         };
         let err = validate_mcp_config(&cfg).expect_err("oversized timeout should fail");
         assert!(err.to_string().contains("exceeds max"), "got: {err}");
@@ -8956,6 +8984,7 @@ require_otp_to_resume = true
         let cfg = McpConfig {
             enabled: true,
             servers: vec![server],
+            ..Default::default()
         };
         assert!(validate_mcp_config(&cfg).is_ok());
     }
@@ -8965,6 +8994,7 @@ require_otp_to_resume = true
         let cfg = McpConfig {
             enabled: true,
             servers: vec![stdio_server("fs", "")],
+            ..Default::default()
         };
         let err = validate_mcp_config(&cfg).expect_err("empty command should fail");
         assert!(
@@ -8983,6 +9013,7 @@ require_otp_to_resume = true
                 url: None,
                 ..Default::default()
             }],
+            ..Default::default()
         };
         let err = validate_mcp_config(&cfg).expect_err("http without url should fail");
         assert!(err.to_string().contains("requires url"), "got: {err}");
@@ -8998,6 +9029,7 @@ require_otp_to_resume = true
                 url: None,
                 ..Default::default()
             }],
+            ..Default::default()
         };
         let err = validate_mcp_config(&cfg).expect_err("sse without url should fail");
         assert!(err.to_string().contains("requires url"), "got: {err}");
@@ -9008,6 +9040,7 @@ require_otp_to_resume = true
         let cfg = McpConfig {
             enabled: true,
             servers: vec![http_server("svc", "ftp://example.com/mcp")],
+            ..Default::default()
         };
         let err = validate_mcp_config(&cfg).expect_err("non-http scheme should fail");
         assert!(err.to_string().contains("http/https"), "got: {err}");
@@ -9018,6 +9051,7 @@ require_otp_to_resume = true
         let cfg = McpConfig {
             enabled: true,
             servers: vec![http_server("svc", "not a url at all !!!")],
+            ..Default::default()
         };
         let err = validate_mcp_config(&cfg).expect_err("invalid url should fail");
         assert!(err.to_string().contains("valid URL"), "got: {err}");
