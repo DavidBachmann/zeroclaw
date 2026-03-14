@@ -1,9 +1,7 @@
 #!/usr/bin/env bash
-# sync-readme.sh — Auto-update "What's New" and "Recent Contributors" in README.md
+# sync-readme.sh — Auto-update "What's New" and "Recent Contributors" in all READMEs
 # Called by the sync-readme GitHub Actions workflow on each release.
 set -euo pipefail
-
-README="README.md"
 
 # --- Resolve version and ranges ---
 
@@ -89,10 +87,17 @@ Thank you to everyone who opened issues, reviewed PRs, translated docs, and help
 
 CONTRIB_EOF
 
-# --- Replace sections using sed with file reads ---
-# Strategy: use python for reliable multiline replacement
+# --- Replace sections in all README files with markers ---
 
-python3 - "$README" "$WHATS_NEW_FILE" "$CONTRIBUTORS_FILE" <<'PYEOF'
+README_FILES=$(find . -maxdepth 1 -name 'README*.md' -type f | sort)
+UPDATED=0
+
+for readme in $README_FILES; do
+  if ! grep -q 'BEGIN:WHATS_NEW' "$readme"; then
+    continue
+  fi
+
+  python3 - "$readme" "$WHATS_NEW_FILE" "$CONTRIBUTORS_FILE" <<'PYEOF'
 import sys, re
 
 readme_path = sys.argv[1]
@@ -108,17 +113,15 @@ with open(whats_new_path, 'r') as f:
 with open(contributors_path, 'r') as f:
     contributors = f.read()
 
-# Replace What's New section
 content = re.sub(
-    r'(<!-- BEGIN:WHATS_NEW -->)\n.*?\n(<!-- END:WHATS_NEW -->)',
+    r'(<!-- BEGIN:WHATS_NEW -->)\n.*?(<!-- END:WHATS_NEW -->)',
     r'\1\n' + whats_new + r'\2',
     content,
     flags=re.DOTALL
 )
 
-# Replace Recent Contributors section
 content = re.sub(
-    r'(<!-- BEGIN:RECENT_CONTRIBUTORS -->)\n.*?\n(<!-- END:RECENT_CONTRIBUTORS -->)',
+    r'(<!-- BEGIN:RECENT_CONTRIBUTORS -->)\n.*?(<!-- END:RECENT_CONTRIBUTORS -->)',
     r'\1\n' + contributors + r'\2',
     content,
     flags=re.DOTALL
@@ -128,6 +131,9 @@ with open(readme_path, 'w') as f:
     f.write(content)
 PYEOF
 
+  UPDATED=$((UPDATED + 1))
+done
+
 rm -f "$WHATS_NEW_FILE" "$CONTRIBUTORS_FILE"
 
-echo "README synced: ${LATEST_TAG} — ${CONTRIBUTOR_COUNT} contributors"
+echo "README synced: ${LATEST_TAG} — ${CONTRIBUTOR_COUNT} contributors — ${UPDATED} files updated"
