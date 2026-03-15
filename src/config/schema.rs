@@ -854,6 +854,12 @@ pub struct AgentConfig {
     /// Default: `[]` (no filtering — all tools included).
     #[serde(default)]
     pub tool_filter_groups: Vec<ToolFilterGroup>,
+    /// Optional model override for tool-call iterations. When the primary model
+    /// produces tool calls, subsequent iterations use this model instead.
+    /// Useful for pairing a cheap/fast conversational model with a reliable
+    /// tool-calling model. Default: `None` (use primary model throughout).
+    #[serde(default)]
+    pub tool_call_model: Option<String>,
 }
 
 fn default_agent_max_tool_iterations() -> usize {
@@ -883,6 +889,7 @@ impl Default for AgentConfig {
             tool_dispatcher: default_agent_tool_dispatcher(),
             tool_call_dedup_exempt: Vec::new(),
             tool_filter_groups: Vec::new(),
+            tool_call_model: None,
         }
     }
 }
