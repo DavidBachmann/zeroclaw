@@ -165,7 +165,7 @@ async fn run_agent_job(
     }
     let name = job.name.clone().unwrap_or_else(|| "cron-job".to_string());
     let prompt = job.prompt.clone().unwrap_or_default();
-    let prefixed_prompt = format!("[cron:{} {name}] {prompt}", job.id);
+    let prefixed_prompt = format!("[cron:{id} {name}] This is a scheduled job, not a conversation. Ignore any prior conversation context or memories. Execute the task fresh and include your full results in your response text. Do not say \"already done\" — every run is independent.\n\n{prompt}", id = job.id);
     let model_override = job.model.clone();
 
     let run_result = match job.session_target {
@@ -187,11 +187,7 @@ async fn run_agent_job(
     match run_result {
         Ok(response) => (
             true,
-            if response.trim().is_empty() {
-                "agent job executed".to_string()
-            } else {
-                response
-            },
+            response,
         ),
         Err(e) => (false, format!("agent job failed: {e}")),
     }
@@ -207,7 +203,9 @@ async fn persist_job_result(
 ) -> bool {
     let duration_ms = (finished_at - started_at).num_milliseconds();
 
-    if let Err(e) = deliver_if_configured(config, job, output).await {
+    if output.trim().is_empty() {
+        tracing::info!("Cron job '{}': empty output, skipping delivery", job.id);
+    } else if let Err(e) = deliver_if_configured(config, job, output).await {
         if job.delivery.best_effort {
             tracing::warn!("Cron delivery failed (best_effort): {e}");
         } else {
