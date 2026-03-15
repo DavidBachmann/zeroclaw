@@ -165,7 +165,7 @@ async fn run_agent_job(
     }
     let name = job.name.clone().unwrap_or_else(|| "cron-job".to_string());
     let prompt = job.prompt.clone().unwrap_or_default();
-    let prefixed_prompt = format!("[cron:{id} {name}] This is a scheduled job, not a conversation. Ignore any prior conversation context or memories. Execute the task fresh and include your full results in your response text. Do not say \"already done\" — every run is independent.\n\n{prompt}", id = job.id);
+    let prefixed_prompt = format!("[cron:{id} {name}] This is a scheduled job. Execute the task below and write your full results as a text response. CRITICAL: After using any tools, you MUST write a final text response summarizing the results. Do not end on a tool call. Do not say \"already done.\" Every run is independent — ignore prior conversation context.\n\n{prompt}", id = job.id);
     let model_override = job.model.clone();
 
     let run_result = match job.session_target {
