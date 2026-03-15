@@ -2146,7 +2146,7 @@ impl Channel for SlackChannel {
     async fn send(&self, message: &SendMessage) -> anyhow::Result<()> {
         let mut body = serde_json::json!({
             "channel": message.recipient,
-            "text": message.content
+            "text": markdown_to_mrkdwn(&message.content)
         });
 
         if let Some(ref ts) = message.thread_ts {
@@ -2182,6 +2182,63 @@ impl Channel for SlackChannel {
             anyhow::bail!("Slack chat.postMessage failed: {err}");
         }
 
+        Ok(())
+    }
+
+
+    async fn add_reaction(
+        &self,
+        channel_id: &str,
+        message_id: &str,
+        emoji: &str,
+    ) -> anyhow::Result<()> {
+        let body = serde_json::json!({
+            "channel": channel_id,
+            "timestamp": message_id,
+            "name": emoji_to_slack_name(emoji),
+        });
+        let resp = self
+            .http_client()
+            .post("https://slack.com/api/reactions.add")
+            .bearer_auth(&self.bot_token)
+            .json(&body)
+            .send()
+            .await?;
+        let parsed: serde_json::Value = resp.json().await.unwrap_or_default();
+        if parsed.get("ok") == Some(&serde_json::Value::Bool(false)) {
+            let err = parsed.get("error").and_then(|e| e.as_str()).unwrap_or("unknown");
+            if err != "already_reacted" {
+                anyhow::bail!("Slack reactions.add failed: {err}");
+            }
+        }
+        Ok(())
+    }
+
+    async fn remove_reaction(
+        &self,
+        channel_id: &str,
+        message_id: &str,
+        emoji: &str,
+    ) -> anyhow::Result<()> {
+        let body = serde_json::json!({
+            "channel": channel_id,
+            "timestamp": message_id,
+            "name": emoji_to_slack_name(emoji),
+        });
+        let resp = self
+            .http_client()
+            .post("https://slack.com/api/reactions.remove")
+            .bearer_auth(&self.bot_token)
+            .json(&body)
+            .send()
+            .await?;
+        let parsed: serde_json::Value = resp.json().await.unwrap_or_default();
+        if parsed.get("ok") == Some(&serde_json::Value::Bool(false)) {
+            let err = parsed.get("error").and_then(|e| e.as_str()).unwrap_or("unknown");
+            if err != "no_reaction" {
+                anyhow::bail!("Slack reactions.remove failed: {err}");
+            }
+        }
         Ok(())
     }
 
@@ -3231,4 +3288,135 @@ mod tests {
         let thread_ts = SlackChannel::inbound_thread_ts(&reply, "200.000");
         assert_eq!(thread_ts.as_deref(), Some("100.000"));
     }
+}
+
+
+/// Map Unicode emoji to Slack short-name for the reactions API.
+fn emoji_to_slack_name(emoji: &str) -> &str {
+    match emoji {
+        "\u{1F440}" => "eyes",
+        "\u{2705}" => "white_check_mark",
+        "\u{26A0}\u{FE0F}" | "\u{26A0}" => "warning",
+        _ => "white_check_mark",
+    }
+}
+/// Convert standard Markdown to Slack mrkdwn format.
+///
+/// Handles the most common differences:
+/// - `**bold**` → `*bold*`
+/// - `[text](url)` → `<url|text>`
+/// - `## Heading` lines → `*Heading*`
+fn markdown_to_mrkdwn(input: &str) -> String {
+    let mut output = String::with_capacity(input.len());
+    for line in input.lines() {
+        let trimmed = line.trim_start();
+        // Convert markdown headings to bold
+        if let Some(rest) = trimmed.strip_prefix("### ") {
+            output.push_str(&format!("*{}*", rest.trim()));
+        } else if let Some(rest) = trimmed.strip_prefix("## ") {
+            output.push_str(&format!("*{}*", rest.trim()));
+        } else if let Some(rest) = trimmed.strip_prefix("# ") {
+            output.push_str(&format!("*{}*", rest.trim()));
+        } else {
+            output.push_str(line);
+        }
+        output.push('\n');
+    }
+    // Remove trailing newline added by the loop
+    if output.ends_with('\n') && !input.ends_with('\n') {
+        output.pop();
+    }
+    // Convert **bold** to *bold* (but not inside code blocks)
+    let result = convert_bold_outside_code(&output);
+    // Convert [text](url) to <url|text>
+    convert_links(&result)
+}
+
+fn convert_bold_outside_code(input: &str) -> String {
+    let mut result = String::with_capacity(input.len());
+    let mut in_code_block = false;
+    let mut in_inline_code = false;
+    let chars: Vec<char> = input.chars().collect();
+    let len = chars.len();
+    let mut i = 0;
+    while i < len {
+        if i + 3 <= len && chars[i] == '`' && chars[i + 1] == '`' && chars[i + 2] == '`' {
+            in_code_block = !in_code_block;
+            result.push_str("```");
+            i += 3;
+            continue;
+        }
+        if chars[i] == '`' && !in_code_block {
+            in_inline_code = !in_inline_code;
+            result.push('`');
+            i += 1;
+            continue;
+        }
+        if !in_code_block && !in_inline_code && i + 2 <= len && chars[i] == '*' && chars[i + 1] == '*' {
+            result.push('*');
+            i += 2;
+            continue;
+        }
+        result.push(chars[i]);
+        i += 1;
+    }
+    result
+}
+
+fn convert_links(input: &str) -> String {
+    use std::fmt::Write;
+    let mut result = String::with_capacity(input.len());
+    let mut in_code_block = false;
+    let mut in_inline_code = false;
+    let chars: Vec<char> = input.chars().collect();
+    let len = chars.len();
+    let mut i = 0;
+    while i < len {
+        if i + 3 <= len && chars[i] == '`' && chars[i + 1] == '`' && chars[i + 2] == '`' {
+            in_code_block = !in_code_block;
+            result.push_str("```");
+            i += 3;
+            continue;
+        }
+        if chars[i] == '`' && !in_code_block {
+            in_inline_code = !in_inline_code;
+            result.push('`');
+            i += 1;
+            continue;
+        }
+        if !in_code_block && !in_inline_code && chars[i] == '[' {
+            if let Some((text, url, end)) = parse_markdown_link(&chars, i) {
+                let _ = write!(result, "<{url}|{text}>");
+                i = end;
+                continue;
+            }
+        }
+        result.push(chars[i]);
+        i += 1;
+    }
+    result
+}
+
+fn parse_markdown_link(chars: &[char], start: usize) -> Option<(String, String, usize)> {
+    let len = chars.len();
+    let mut i = start + 1;
+    let mut text = String::new();
+    while i < len && chars[i] != ']' {
+        if chars[i] == '\n' { return None; }
+        text.push(chars[i]);
+        i += 1;
+    }
+    if i >= len || text.is_empty() { return None; }
+    i += 1;
+    if i >= len || chars[i] != '(' { return None; }
+    i += 1;
+    let mut url = String::new();
+    while i < len && chars[i] != ')' {
+        if chars[i] == '\n' { return None; }
+        url.push(chars[i]);
+        i += 1;
+    }
+    if i >= len || url.is_empty() { return None; }
+    i += 1;
+    Some((text, url, i))
 }
