@@ -1457,6 +1457,7 @@ mod native_backend {
             let mut args: Vec<Value> = Vec::new();
 
             if headless {
+                args.push(Value::String("--user-agent=Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:147.0) Gecko/20100101 Firefox/147.0".to_string()));
                 args.push(Value::String("--headless=new".to_string()));
                 args.push(Value::String("--disable-gpu".to_string()));
             }
