@@ -1765,11 +1765,26 @@ impl SlackChannel {
                 last_ts_by_channel.insert(channel_id.clone(), ts.to_string());
                 let sender = self.resolve_sender_identity(user).await;
 
+                // If this is a mid-thread mention, fetch prior thread
+                // messages so the LLM has context for the conversation.
+                let content = if let Some(ref tts) = Self::inbound_thread_ts(event, ts) {
+                    if let Some(ctx) = self
+                        .hydrate_thread_context(&channel_id, tts, ts, bot_user_id)
+                        .await
+                    {
+                        format!("{ctx}{normalized_text}")
+                    } else {
+                        normalized_text
+                    }
+                } else {
+                    normalized_text
+                };
+
                 let channel_msg = ChannelMessage {
                     id: format!("slack_{channel_id}_{ts}"),
                     sender,
                     reply_target: channel_id.clone(),
-                    content: normalized_text,
+                    content,
                     channel: "slack".to_string(),
                     timestamp: std::time::SystemTime::now()
                         .duration_since(std::time::UNIX_EPOCH)
@@ -1978,6 +1993,53 @@ impl SlackChannel {
         }
 
         None
+    }
+
+
+    /// Fetch prior thread messages and format as context for the LLM.
+    /// Called when the bot is mentioned mid-thread so it can see what
+    /// was discussed before the mention.
+    async fn hydrate_thread_context(
+        &self,
+        channel_id: &str,
+        thread_ts: &str,
+        current_ts: &str,
+        bot_user_id: &str,
+    ) -> Option<String> {
+        let data = self
+            .fetch_thread_replies_with_retry(channel_id, thread_ts, "0")
+            .await?;
+        let replies = data.get("messages")?.as_array()?;
+
+        let mut context_lines: Vec<String> = Vec::new();
+        for reply in replies {
+            let reply_ts = reply.get("ts").and_then(|v| v.as_str()).unwrap_or_default();
+            // Stop before the current message (it's already the user prompt)
+            if reply_ts >= current_ts {
+                break;
+            }
+            let user_id = reply.get("user").and_then(|v| v.as_str()).unwrap_or("unknown");
+            let text = reply.get("text").and_then(|v| v.as_str()).unwrap_or("");
+            if text.is_empty() {
+                continue;
+            }
+            let sender = if user_id == bot_user_id {
+                "Kimi (you)".to_string()
+            } else {
+                self.resolve_sender_identity(user_id).await
+            };
+            context_lines.push(format!("{sender}: {text}"));
+        }
+
+        if context_lines.is_empty() {
+            return None;
+        }
+
+        Some(format!(
+            "[Thread context — {} prior messages]\n{}\n[End of thread context]\n\n",
+            context_lines.len(),
+            context_lines.join("\n")
+        ))
     }
 
     async fn fetch_thread_replies_with_retry(
