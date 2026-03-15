@@ -3361,6 +3361,10 @@ pub struct SlackConfig {
     /// cancels the in-flight request and starts a fresh response with preserved history.
     #[serde(default)]
     pub interrupt_on_new_message: bool,
+    /// When true, only respond to messages that @-mention the bot in groups.
+    /// Direct messages are always processed.
+    #[serde(default)]
+    pub mention_only: bool,
 }
 
 impl ChannelConfig for SlackConfig {
