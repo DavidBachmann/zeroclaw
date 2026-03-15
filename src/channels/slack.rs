@@ -1605,6 +1605,7 @@ impl SlackChannel {
         scoped_channels: Option<Vec<String>>,
     ) -> anyhow::Result<()> {
         let mut last_ts_by_channel: HashMap<String, String> = HashMap::new();
+        let mut joined_threads: HashSet<String> = HashSet::new();
         let mut open_url_attempt: u32 = 0;
         let mut socket_reconnect_attempt: u32 = 0;
 
@@ -1752,8 +1753,11 @@ impl SlackChannel {
                 let is_group_message = Self::is_group_channel_id(&channel_id);
                 let allow_sender_without_mention =
                     is_group_message && self.is_group_sender_trigger_enabled(user);
+                let in_joined_thread = Self::inbound_thread_ts(event, ts)
+                    .as_ref()
+                    .map_or(false, |tts| joined_threads.contains(tts));
                 let require_mention =
-                    self.mention_only && is_group_message && !allow_sender_without_mention;
+                    self.mention_only && is_group_message && !allow_sender_without_mention && !in_joined_thread;
 
                 let Some(normalized_text) = self
                     .build_incoming_content(event, require_mention, bot_user_id)
@@ -1793,6 +1797,11 @@ impl SlackChannel {
                     thread_ts: Self::inbound_thread_ts(event, ts),
                 };
 
+
+                // Track this thread so future replies skip the mention requirement.
+                if let Some(ref tts) = Self::inbound_thread_ts(event, ts) {
+                    joined_threads.insert(tts.clone());
+                }
                 if tx.send(channel_msg).await.is_err() {
                     return Ok(());
                 }
