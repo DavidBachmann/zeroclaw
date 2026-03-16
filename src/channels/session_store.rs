@@ -78,6 +78,12 @@ impl SessionStore {
         Ok(())
     }
 
+
+    /// Remove the JSONL file for a session, effectively clearing its history.
+    pub fn clear(&self, session_key: &str) {
+        let path = self.session_path(session_key);
+        let _ = std::fs::remove_file(&path);
+    }
     /// List all session keys that have files on disk.
     pub fn list_sessions(&self) -> Vec<String> {
         let entries = match std::fs::read_dir(&self.sessions_dir) {

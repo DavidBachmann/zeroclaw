@@ -906,6 +906,9 @@ fn clear_sender_history(ctx: &ChannelRuntimeContext, sender_key: &str) {
         .lock()
         .unwrap_or_else(|e| e.into_inner())
         .remove(sender_key);
+    if let Some(ref store) = ctx.session_store {
+        store.clear(sender_key);
+    }
 }
 
 fn compact_sender_history(ctx: &ChannelRuntimeContext, sender_key: &str) -> bool {
@@ -1788,6 +1791,13 @@ async fn process_channel_message(
     }
 
     let history_key = conversation_history_key(&msg);
+
+    // Top-level messages (no thread) start with a clean slate.
+    // Threaded messages preserve their conversation context.
+    if msg.thread_ts.is_none() {
+        clear_sender_history(ctx.as_ref(), &history_key);
+    }
+
     let route = get_route_selection(ctx.as_ref(), &history_key);
     let runtime_defaults = runtime_defaults_snapshot(ctx.as_ref());
     let active_provider = match get_or_create_provider(ctx.as_ref(), &route.provider).await {
