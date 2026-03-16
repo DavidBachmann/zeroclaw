@@ -422,6 +422,7 @@ impl DelegateTool {
                 &[],
                 &[],
                 None,
+                &[],
             ),
         )
         .await;

@@ -860,6 +860,10 @@ pub struct AgentConfig {
     /// tool-calling model. Default: `None` (use primary model throughout).
     #[serde(default)]
     pub tool_call_model: Option<String>,
+    /// When set, only switch to `tool_call_model` if the LLM calls one of these
+    /// tools. If empty, any tool call triggers the switch. Default: `[]`.
+    #[serde(default)]
+    pub tool_call_model_tools: Vec<String>,
 }
 
 fn default_agent_max_tool_iterations() -> usize {
@@ -890,6 +894,7 @@ impl Default for AgentConfig {
             tool_call_dedup_exempt: Vec::new(),
             tool_filter_groups: Vec::new(),
             tool_call_model: None,
+            tool_call_model_tools: Vec::new(),
         }
     }
 }

@@ -2108,6 +2108,7 @@ pub(crate) async fn agent_turn(
     multimodal_config: &crate::config::MultimodalConfig,
     max_tool_iterations: usize,
     tool_call_model: Option<&str>,
+    tool_call_model_tools: &[String],
 ) -> Result<String> {
     run_tool_call_loop(
         provider,
@@ -2128,6 +2129,7 @@ pub(crate) async fn agent_turn(
         &[],
         &[],
         tool_call_model,
+        tool_call_model_tools,
     )
     .await
 }
@@ -2322,6 +2324,7 @@ pub(crate) async fn run_tool_call_loop(
     excluded_tools: &[String],
     dedup_exempt_tools: &[String],
     tool_call_model: Option<&str>,
+    tool_call_model_tools: &[String],
 ) -> Result<String> {
     let max_iterations = if max_tool_iterations == 0 {
         DEFAULT_MAX_TOOL_ITERATIONS
@@ -2621,15 +2624,22 @@ pub(crate) async fn run_tool_call_loop(
 
         // Print any text the LLM produced alongside tool calls (unless silent)
         // Swap to tool_call_model for subsequent iterations if configured.
+        // When tool_call_model_tools is non-empty, only switch if at least
+        // one of the current tool calls matches the filter list.
         if let Some(tcm) = tool_call_model {
             if effective_model != tcm {
-                tracing::info!(
-                    "Switching from primary model to tool_call_model: {tcm}"
-                );
-                effective_model = tcm;
+                let should_switch = tool_call_model_tools.is_empty()
+                    || tool_calls.iter().any(|c| {
+                        tool_call_model_tools.iter().any(|t| t == &c.name)
+                    });
+                if should_switch {
+                    tracing::info!(
+                        "Switching from primary model to tool_call_model: {tcm}"
+                    );
+                    effective_model = tcm;
+                }
             }
         }
-
         if !silent && !display_text.is_empty() {
             print!("{display_text}");
             let _ = std::io::stdout().flush();
@@ -3374,6 +3384,7 @@ pub async fn run(
             &excluded_tools,
             &config.agent.tool_call_dedup_exempt,
             config.agent.tool_call_model.as_deref(),
+            &config.agent.tool_call_model_tools,
         )
         .await?;
         final_output = response.clone();
@@ -3523,6 +3534,7 @@ pub async fn run(
                 &excluded_tools,
                 &config.agent.tool_call_dedup_exempt,
                 config.agent.tool_call_model.as_deref(),
+                &config.agent.tool_call_model_tools,
             )
             .await
             {
@@ -3805,6 +3817,7 @@ pub async fn process_message(config: Config, message: &str) -> Result<String> {
         &config.multimodal,
         config.agent.max_tool_iterations,
         config.agent.tool_call_model.as_deref(),
+        &config.agent.tool_call_model_tools,
     )
     .await
 }
@@ -4184,6 +4197,7 @@ mod tests {
             &[],
             &[],
             None,
+            &[],
         )
         .await
         .expect_err("provider without vision support should fail");
@@ -4232,6 +4246,7 @@ mod tests {
             &[],
             &[],
             None,
+            &[],
         )
         .await
         .expect_err("oversized payload must fail");
@@ -4274,6 +4289,7 @@ mod tests {
             &[],
             &[],
             None,
+            &[],
         )
         .await
         .expect("valid multimodal payload should pass");
@@ -4402,6 +4418,7 @@ mod tests {
             &[],
             &[],
             None,
+            &[],
         )
         .await
         .expect("parallel execution should complete");
@@ -4473,6 +4490,7 @@ mod tests {
             &[],
             &[],
             None,
+            &[],
         )
         .await
         .expect("loop should finish after deduplicating repeated calls");
@@ -4536,6 +4554,7 @@ mod tests {
             &[],
             None,
             &exempt,
+            &[],
         )
         .await
         .expect("loop should finish with exempt tool executing twice");
@@ -4614,6 +4633,7 @@ mod tests {
             &[],
             None,
             &exempt,
+            &[],
         )
         .await
         .expect("loop should complete");
@@ -4669,6 +4689,7 @@ mod tests {
             &[],
             &[],
             None,
+            &[],
         )
         .await
         .expect("native fallback id flow should complete");
