@@ -2184,8 +2184,6 @@ async fn process_channel_message(
         }))
     };
 
-    // Record history length before tool loop so we can extract tool context after.
-    let history_len_before_tools = history.len();
 
     enum LlmExecutionResult {
         Completed(Result<Result<String, anyhow::Error>, tokio::time::error::Elapsed>),
